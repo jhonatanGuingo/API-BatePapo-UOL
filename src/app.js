@@ -117,8 +117,12 @@ app.post("/messages", async (req, res) => {
 
 app.get("/messages", async (req, res) => {
   const { user } = req.headers;
-  const limit = parseInt(req.query.limit);
+  const {limit} = req.query;
   try {
+    if (Number(limit) <= 0 || Number.isNaN(limit)) {
+      
+        return res.sendStatus(422);
+      } 
     const verifiMsg = await db
       .collection("messages")
       .find({
@@ -128,15 +132,9 @@ app.get("/messages", async (req, res) => {
           { type: "Todos" },
           { type: "message" },
           { type: "status" },
-        ],
-      })
+        ]
+      }).limit(Number(limit))
       .toArray();
-    if (Number(limit) <= 0 || Number.isNaN(limit)) {
-      
-      return res.sendStatus(422);
-    } else{
-        verifiMsg = verifiMsg.slice(0, Number(limit));
-    }
     res.send(verifiMsg);
   } catch (err) {
     return res.status(500).send(err.message);
