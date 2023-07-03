@@ -119,7 +119,7 @@ app.get("/messages", async (req, res) => {
   const { user } = req.headers;
   const {limit} = req.query;
   try {
-    if (Number(limit) <= 0 || Number.isNaN(limit)) {
+    if (Number(limit) <= 0 || isNaN(limit)) {
       
         return res.sendStatus(422);
       } 
