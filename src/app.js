@@ -27,9 +27,9 @@ const userSchema = Joi.object({
 });
 
 const messageSchema = Joi.object({
-    to: Joi.string().required(),
-    text: Joi.string().required(),
-    type: Joi.string().valid("message", "private_message").required()
+  to: Joi.string().required(),
+  text: Joi.string().required(),
+  type: Joi.string().valid("message", "private_message").required(),
 });
 
 let time = dayjs().locale("pt-br").format("HH:mm:ss");
@@ -46,11 +46,11 @@ app.post("/participants", async (req, res) => {
 
   const bodyLogin = {
     from: name,
-    to: 'Todos',
-    text: 'entra na sala...',
-    type: 'status',
-    time
-  }
+    to: "Todos",
+    text: "entra na sala...",
+    type: "status",
+    time,
+  };
 
   const validation = userSchema.validate(participants, { abortEarly: false });
   if (validation.error) {
@@ -71,62 +71,111 @@ app.post("/participants", async (req, res) => {
   }
 });
 
-app.get("/participants", async(req, res) => {
-    try {
-        const participantes = await db.collection("participants").find().toArray();
-        res.send(participantes)
-    } catch(err){
-        return res.status(500).send(err.message);
-    }
-})
+app.get("/participants", async (req, res) => {
+  try {
+    const participantes = await db.collection("participants").find().toArray();
+    res.send(participantes);
+  } catch (err) {
+    return res.status(500).send(err.message);
+  }
+});
 
 app.post("/messages", async (req, res) => {
-    const {to, text, type} = req.body;
-    const {user} = req.headers;
+  const { to, text, type } = req.body;
+  const { user } = req.headers;
 
-    const bodyMessage = {
-        to,
-        text,
-        type
-    }
-    const msg =  {
-        from: user,
-        to,
-        text,
-        type,
-        time
-    }
+  const bodyMessage = {
+    to,
+    text,
+    type,
+  };
+  const msg = {
+    from: user,
+    to,
+    text,
+    type,
+    time,
+  };
 
-    const validation = messageSchema.validate(bodyMessage, {abortEarly: false});
-    if (validation.error) {
-        const errors = validation.error.details.map((detail) => detail.message);
-        return res.status(422).send(errors);
-      }
+  const validation = messageSchema.validate(bodyMessage, { abortEarly: false });
+  if (validation.error) {
+    const errors = validation.error.details.map((detail) => detail.message);
+    return res.status(422).send(errors);
+  }
 
-    try{
-        const userExist = await db.collection("participants").findOne({name: user});
-        if (!userExist) return res.status(409).send("Esse usuário não existe!");
-        await db.collection("messages").insertOne(msg);
-        res.sendStatus(201);
-    }catch(err){
-        return res.status(500).send(err.message);
-    }
-})
+  try {
+    const userExist = await db
+      .collection("participants")
+      .findOne({ name: user });
+    if (!userExist) return res.status(422).send("Esse usuário não existe!");
+    await db.collection("messages").insertOne(msg);
+    res.sendStatus(201);
+  } catch (err) {
+    return res.status(500).send(err.message);
+  }
+});
 
 app.get("/messages", async (req, res) => {
-    const {user} = req.headers;
-    const limit = parseInt(req.query.limit);
+  const { user } = req.headers;
+  const limit = parseInt(req.query.limit);
+  try {
+    const verifiMsg = await db
+      .collection("messages")
+      .find({
+        $or: [
+          { to: user },
+          { from: user },
+          { type: "Todos" },
+          { type: "message" },
+          { type: "status" },
+        ],
+      })
+      .toArray();
+    if (Number(limit) <= 0 || Number.isNaN(limit)) {
+      
+      return res.sendStatus(422);
+    } else{
+        verifiMsg = verifiMsg.slice(0, Number(limit));
+    }
+    res.send(verifiMsg);
+  } catch (err) {
+    return res.status(500).send(err.message);
+  }
+});
+
+app.post("/status", async (req, res) => {
+  const { user } = req.headers;
+  const {id} = req.params;
+  if (!user) return res.sendStatus(404);
+  try {
+    const verifiUser = await db
+      .collection("participants")
+      .findOne({ name: user });
+    if (!verifiUser) return res.status(409);
+    await db.collection("participants").updateOne({name: user}, { $set: {lastStatus: Date.now()}});
+    res.sendStatus(201)
+  } catch(err) {
+    return res.status(500).send(err.message);
+  }
+});
+
+setInterval(async () =>{
     try{
-        const verifiMsg = await db.collection("messages").find( {$or: [{to: user}, {from: user}, {type: "Todos"}, {type:"message"}, {type: "status"}]}).toArray();
-        if(!limit) {
-            verifiMsg = verifiMsg.slice(0, limit);
-        }else if(limit <= 0 ){
-            return res.sendStatus(422)
-        }
-        res.send(verifiMsg);
+        const userInactive = await db.collection("participants").find({ lastStatus: {$lt: Date.now() - 10000}}).toArray();
+        userInactive.forEach(async (user) => {
+            await db.collection("messages").insertOne({
+                from: user.name,
+                to: "Todos",
+                text: "sai da sala...",
+                type: "status",
+                time: time
+            });
+
+            await db.collection("participants").deleteOne({_id: user._id});
+        })
     }catch(err){
         return res.status(500).send(err.message);
     }
-})
+}, 15000)
 const PORT = 5000;
 app.listen(PORT, () => console.log(`Rodando na porta ${PORT}`));
