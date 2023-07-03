@@ -25,6 +25,13 @@ const db = mongoClient.db();
 const userSchema = Joi.object({
   name: Joi.string().required(),
 });
+
+const messageSchema = Joi.object({
+    to: Joi.string().required(),
+    text: Joi.string().required(),
+    type: Joi.string().valid("message", "private_message").required()
+});
+
 let time = dayjs().locale("pt-br").format("HH:mm:ss");
 app.post("/participants", async (req, res) => {
   const { name } = req.body;
@@ -37,13 +44,14 @@ app.post("/participants", async (req, res) => {
     lastStatus: Date.now(),
   };
 
-  const bodyMessage = {
+  const bodyLogin = {
     from: name,
     to: 'Todos',
     text: 'entra na sala...',
     type: 'status',
     time
   }
+
   const validation = userSchema.validate(participants, { abortEarly: false });
   if (validation.error) {
     const errors = validation.error.details.map((detail) => detail.message);
@@ -56,9 +64,8 @@ app.post("/participants", async (req, res) => {
       .findOne({ name: name });
     if (nameRepeat) return res.status(409).send("Esse usuário já existe!");
     await db.collection("participants").insertOne(userName);
-    await db.collection("messages").insertOne(bodyMessage);
+    await db.collection("messages").insertOne(bodyLogin);
     res.sendStatus(201);
-    console.log(bodyMessage);
   } catch (err) {
     return res.status(500).send(err.message);
   }
@@ -73,5 +80,53 @@ app.get("/participants", async(req, res) => {
     }
 })
 
+app.post("/messages", async (req, res) => {
+    const {to, text, type} = req.body;
+    const {user} = req.headers;
+
+    const bodyMessage = {
+        to,
+        text,
+        type
+    }
+    const msg =  {
+        from: user,
+        to,
+        text,
+        type,
+        time
+    }
+
+    const validation = messageSchema.validate(bodyMessage, {abortEarly: false});
+    if (validation.error) {
+        const errors = validation.error.details.map((detail) => detail.message);
+        return res.status(422).send(errors);
+      }
+
+    try{
+        const userExist = await db.collection("participants").findOne({name: user});
+        if (!userExist) return res.status(409).send("Esse usuário não existe!");
+        await db.collection("messages").insertOne(msg);
+        res.sendStatus(201);
+    }catch(err){
+        return res.status(500).send(err.message);
+    }
+})
+
+app.get("/messages", async (req, res) => {
+    const {user} = req.headers;
+    const limit = parseInt(req.query.limit);
+    try{
+        const verifiMsg = await db.collection("messages").find( {$or: [{to: user}, {from: user}, {type: "Todos"}, {type:"message"}, {type: "status"}]}).toArray();
+        if(!limit) {
+            verifiMsg = verifiMsg.slice(0, limit);
+        }else if(limit <= 0 ){
+            return res.sendStatus(422)
+        }
+        res.send(verifiMsg);
+    }catch(err){
+        return res.status(500).send(err.message);
+    }
+})
 const PORT = 5000;
 app.listen(PORT, () => console.log(`Rodando na porta ${PORT}`));
